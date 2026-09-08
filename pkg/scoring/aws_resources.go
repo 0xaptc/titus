@@ -21,14 +21,16 @@ type secretsManagerAPI interface {
 	ListSecrets(ctx context.Context, params *secretsmanager.ListSecretsInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.ListSecretsOutput, error)
 }
 
-type awsResourceClientFactory func(ctx context.Context, keyID, secretKey, sessionToken string) (s3API, secretsManagerAPI, error)
+var smRegions = []string{"us-east-1", "us-west-2", "eu-west-1", "eu-central-1", "ap-southeast-1"}
 
-func defaultAWSResourceClientFactory(ctx context.Context, keyID, secretKey, sessionToken string) (s3API, secretsManagerAPI, error) {
+type awsResourceClientFactory func(ctx context.Context, keyID, secretKey, sessionToken, region string) (s3API, secretsManagerAPI, error)
+
+func defaultAWSResourceClientFactory(ctx context.Context, keyID, secretKey, sessionToken, region string) (s3API, secretsManagerAPI, error) {
 	cfg, err := awsconfig.LoadDefaultConfig(ctx,
 		awsconfig.WithCredentialsProvider(
 			credentials.NewStaticCredentialsProvider(keyID, secretKey, sessionToken),
 		),
-		awsconfig.WithRegion("us-east-1"),
+		awsconfig.WithRegion(region),
 	)
 	if err != nil {
 		return nil, nil, err
@@ -69,7 +71,7 @@ func (c *awsS3BucketsCondition) Evaluate(ctx context.Context, m *types.Match) (b
 	if rcFactory == nil {
 		rcFactory = defaultAWSResourceClientFactory
 	}
-	s3Client, _, err := rcFactory(ctx, keyID, secretKey, sessionToken)
+	s3Client, _, err := rcFactory(ctx, keyID, secretKey, sessionToken, "us-east-1")
 	if err != nil {
 		return false, nil
 	}
@@ -137,28 +139,39 @@ func (c *awsSecretsManagerCondition) Evaluate(ctx context.Context, m *types.Matc
 	if rcFactory == nil {
 		rcFactory = defaultAWSResourceClientFactory
 	}
-	_, smClient, err := rcFactory(ctx, keyID, secretKey, sessionToken)
-	if err != nil {
-		return false, nil
-	}
 
-	maxResults := int32(maxResourcesPerType)
-	out, err := smClient.ListSecrets(ctx, &secretsmanager.ListSecretsInput{
-		MaxResults: &maxResults,
-	})
-	if err != nil {
-		return false, nil
-	}
+	found := 0
+	remaining := maxResourcesPerType
+	for _, region := range smRegions {
+		_, smClient, err := rcFactory(ctx, keyID, secretKey, sessionToken, region)
+		if err != nil {
+			continue
+		}
 
-	for _, secret := range out.SecretList {
-		m.Resources = append(m.Resources, types.ResourceInfo{
-			Service: "aws",
-			Type:    "secret",
-			Name:    awslib.ToString(secret.Name),
+		maxResults := int32(remaining)
+		out, err := smClient.ListSecrets(ctx, &secretsmanager.ListSecretsInput{
+			MaxResults: &maxResults,
 		})
+		if err != nil {
+			continue
+		}
+
+		for _, secret := range out.SecretList {
+			m.Resources = append(m.Resources, types.ResourceInfo{
+				Service: "aws",
+				Type:    "secret",
+				Name:    awslib.ToString(secret.Name),
+				Region:  region,
+			})
+			found++
+		}
+		remaining = maxResourcesPerType - found
+		if remaining <= 0 {
+			break
+		}
 	}
 
-	return len(out.SecretList) > 0, nil
+	return found > 0, nil
 }
 
 func containsSensitiveName(name string) bool {

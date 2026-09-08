@@ -144,8 +144,18 @@ func (m *mockSecretsManager) ListSecrets(_ context.Context, _ *secretsmanager.Li
 }
 
 func fakeResourceFactory(s3Client s3API, smClient secretsManagerAPI) awsResourceClientFactory {
-	return func(_ context.Context, _, _, _ string) (s3API, secretsManagerAPI, error) {
+	return func(_ context.Context, _, _, _, _ string) (s3API, secretsManagerAPI, error) {
 		return s3Client, smClient, nil
+	}
+}
+
+func fakeRegionalResourceFactory(s3Client s3API, smByRegion map[string]secretsManagerAPI) awsResourceClientFactory {
+	return func(_ context.Context, _, _, _, region string) (s3API, secretsManagerAPI, error) {
+		sm, ok := smByRegion[region]
+		if !ok {
+			return s3Client, &mockSecretsManager{}, nil
+		}
+		return s3Client, sm, nil
 	}
 }
 
@@ -243,9 +253,11 @@ func TestAWSSecretsManagerCondition_PopulatesResources(t *testing.T) {
 			&mockSTS{identity: &sts.GetCallerIdentityOutput{}},
 			&mockIAM{},
 		),
-		resourceClientFactory: fakeResourceFactory(
+		resourceClientFactory: fakeRegionalResourceFactory(
 			&mockS3{},
-			&mockSecretsManager{secrets: []string{"prod/db-password", "api-key"}},
+			map[string]secretsManagerAPI{
+				"us-east-1": &mockSecretsManager{secrets: []string{"prod/db-password", "api-key"}},
+			},
 		),
 	}
 
@@ -256,6 +268,36 @@ func TestAWSSecretsManagerCondition_PopulatesResources(t *testing.T) {
 	assert.Len(t, m.Resources, 2)
 	assert.Equal(t, "secret", m.Resources[0].Type)
 	assert.Equal(t, "prod/db-password", m.Resources[0].Name)
+	assert.Equal(t, "us-east-1", m.Resources[0].Region)
+}
+
+func TestAWSSecretsManagerCondition_MultiRegion(t *testing.T) {
+	cond := &awsSecretsManagerCondition{
+		clientFactory: fakeFactory(
+			&mockSTS{identity: &sts.GetCallerIdentityOutput{}},
+			&mockIAM{},
+		),
+		resourceClientFactory: fakeRegionalResourceFactory(
+			&mockS3{},
+			map[string]secretsManagerAPI{
+				"us-west-2":  &mockSecretsManager{secrets: []string{"west-secret"}},
+				"eu-west-1":  &mockSecretsManager{secrets: []string{"eu-secret-1", "eu-secret-2"}},
+			},
+		),
+	}
+
+	m := testMatch()
+	fired, err := cond.Evaluate(context.Background(), m)
+	require.NoError(t, err)
+	assert.True(t, fired, "should fire when secrets exist in non-default regions")
+	assert.Len(t, m.Resources, 3)
+
+	regions := map[string]bool{}
+	for _, r := range m.Resources {
+		regions[r.Region] = true
+	}
+	assert.True(t, regions["us-west-2"])
+	assert.True(t, regions["eu-west-1"])
 }
 
 func TestAWSSecretsManagerCondition_DoesNotFireWhenEmpty(t *testing.T) {
