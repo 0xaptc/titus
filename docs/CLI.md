@@ -3,7 +3,7 @@
 # titus CLI reference
 
 Every command, alias and flag below is derived from the cobra command tree, not from prose.
-Schema version 1, surface hash `sha256:0acd16ad62c2775b57bf1cfa8f508594ef49decc0b9f93dcae62aa0f9cc06fa8`.
+Schema version 1, surface hash `sha256:b7992c2ae91ea1b14614dba98eae3c1dd78bfacaf079031901aded0b89c0424c`.
 
 Regenerate with `make cli-docs` after adding, removing or renaming a command or a flag.
 
@@ -1015,7 +1015,7 @@ Scan a target for secrets
 | `--store-blobs` |  | bool | `false` | Store file contents in blobs/ directory |
 | `--validate` |  | bool | `false` | validate detected secrets against their source APIs |
 | `--validate-workers` |  | int | `4` | number of concurrent validation workers |
-| `--workers` |  | int | `18` | Number of parallel scan workers |
+| `--workers` |  | int | `NumCPU` | Number of parallel scan workers |
 
 ### Inherited flags
 

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "surfaceHash": "sha256:0acd16ad62c2775b57bf1cfa8f508594ef49decc0b9f93dcae62aa0f9cc06fa8",
+  "surfaceHash": "sha256:b7992c2ae91ea1b14614dba98eae3c1dd78bfacaf079031901aded0b89c0424c",
   "commands": [
     {
       "path": "titus",
@@ -2968,7 +2968,7 @@
         {
           "name": "workers",
           "type": "int",
-          "default": "18",
+          "default": "NumCPU",
           "usage": "Number of parallel scan workers"
         }
       ]
