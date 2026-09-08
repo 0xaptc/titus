@@ -77,16 +77,19 @@ func TestOutputAnalyzeJSON(t *testing.T) {
 	analyzeFormat = "json"
 	defer func() { analyzeFormat = "human" }()
 
-	findings := []*types.Finding{
+	results := []analyzedFinding{
 		{
-			ID:     "test-finding-1",
-			RuleID: "np.test.1",
-			Groups: [][]byte{[]byte("secret-value")},
-			Score:  &types.Score{Final: 75, Base: 50, SuggestedSeverity: "high"},
-			Owner:  &types.OwnerInfo{User: "alice", Email: "alice@example.com"},
-			Resources: []types.ResourceInfo{
-				{Service: "aws", Type: "s3_bucket", Name: "prod-data"},
+			finding: &types.Finding{
+				ID:     "test-finding-1",
+				RuleID: "np.test.1",
+				Groups: [][]byte{[]byte("secret-value")},
+				Score:  &types.Score{Final: 75, Base: 50, SuggestedSeverity: "high"},
+				Owner:  &types.OwnerInfo{User: "alice", Email: "alice@example.com"},
+				Resources: []types.ResourceInfo{
+					{Service: "aws", Type: "s3_bucket", Name: "prod-data"},
+				},
 			},
+			validation: &types.ValidationResult{Status: "valid", Confidence: 1.0, Message: "key is active"},
 		},
 	}
 
@@ -95,7 +98,7 @@ func TestOutputAnalyzeJSON(t *testing.T) {
 	}
 
 	cmd, buf := newAnalyzeCmd()
-	err := outputAnalyzeJSON(cmd, findings, ruleMap)
+	err := outputAnalyzeJSON(cmd, results, ruleMap)
 	require.NoError(t, err)
 
 	var out analyzeOutput
@@ -111,23 +114,29 @@ func TestOutputAnalyzeJSON(t *testing.T) {
 	assert.Equal(t, "alice", f.Owner.User)
 	assert.Len(t, f.Resources, 1)
 	assert.Equal(t, "s3_bucket", f.Resources[0].Type)
+	require.NotNil(t, f.Validation)
+	assert.Equal(t, types.StatusValid, f.Validation.Status)
+	assert.Equal(t, "key is active", f.Validation.Message)
 }
 
 func TestOutputAnalyzeHuman(t *testing.T) {
 	reportColor = "never"
 	defer func() { reportColor = "auto" }()
 
-	findings := []*types.Finding{
+	results := []analyzedFinding{
 		{
-			ID:     "test-finding-1",
-			RuleID: "np.test.1",
-			Groups: [][]byte{[]byte("secret-value")},
-			Score:  &types.Score{Final: 85, Base: 50, SuggestedSeverity: "critical"},
-			Owner:  &types.OwnerInfo{User: "alice", Email: "alice@example.com", AccountID: "123456"},
-			Resources: []types.ResourceInfo{
-				{Service: "aws", Type: "s3_bucket", Name: "prod-data"},
-				{Service: "aws", Type: "secret", Name: "db-password", Region: "us-east-1"},
+			finding: &types.Finding{
+				ID:     "test-finding-1",
+				RuleID: "np.test.1",
+				Groups: [][]byte{[]byte("secret-value")},
+				Score:  &types.Score{Final: 85, Base: 50, SuggestedSeverity: "critical"},
+				Owner:  &types.OwnerInfo{User: "alice", Email: "alice@example.com", AccountID: "123456"},
+				Resources: []types.ResourceInfo{
+					{Service: "aws", Type: "s3_bucket", Name: "prod-data"},
+					{Service: "aws", Type: "secret", Name: "db-password", Region: "us-east-1"},
+				},
 			},
+			validation: &types.ValidationResult{Status: "valid", Confidence: 1.0, Message: "key is active"},
 		},
 	}
 
@@ -136,13 +145,16 @@ func TestOutputAnalyzeHuman(t *testing.T) {
 	}
 
 	cmd, buf := newAnalyzeCmd()
-	err := outputAnalyzeHuman(cmd, findings, ruleMap)
+	err := outputAnalyzeHuman(cmd, results, ruleMap)
 	require.NoError(t, err)
 
 	output := buf.String()
 	assert.Contains(t, output, "Credential Analysis")
 	assert.Contains(t, output, "1 finding(s)")
 	assert.Contains(t, output, "Test Rule")
+	assert.Contains(t, output, "Validation:")
+	assert.Contains(t, output, "valid")
+	assert.Contains(t, output, "key is active")
 	assert.Contains(t, output, "85/100")
 	assert.Contains(t, output, "critical")
 	assert.Contains(t, output, "alice")
@@ -158,11 +170,13 @@ func TestOutputAnalyzeHuman_NoScore(t *testing.T) {
 	reportColor = "never"
 	defer func() { reportColor = "auto" }()
 
-	findings := []*types.Finding{
+	results := []analyzedFinding{
 		{
-			ID:     "test-finding-1",
-			RuleID: "np.test.1",
-			Groups: [][]byte{[]byte("value")},
+			finding: &types.Finding{
+				ID:     "test-finding-1",
+				RuleID: "np.test.1",
+				Groups: [][]byte{[]byte("value")},
+			},
 		},
 	}
 
@@ -171,7 +185,7 @@ func TestOutputAnalyzeHuman_NoScore(t *testing.T) {
 	}
 
 	cmd, buf := newAnalyzeCmd()
-	err := outputAnalyzeHuman(cmd, findings, ruleMap)
+	err := outputAnalyzeHuman(cmd, results, ruleMap)
 	require.NoError(t, err)
 
 	output := buf.String()
@@ -179,23 +193,26 @@ func TestOutputAnalyzeHuman_NoScore(t *testing.T) {
 	assert.NotContains(t, output, "Score:")
 	assert.NotContains(t, output, "Owner:")
 	assert.NotContains(t, output, "Resources:")
+	assert.NotContains(t, output, "Validation:")
 }
 
 func TestOutputAnalyzeHuman_ScoringTrail(t *testing.T) {
 	reportColor = "never"
 	defer func() { reportColor = "auto" }()
 
-	findings := []*types.Finding{
+	results := []analyzedFinding{
 		{
-			ID:     "test-finding-1",
-			RuleID: "np.test.1",
-			Groups: [][]byte{[]byte("value")},
-			Score: &types.Score{
-				Final:             65,
-				Base:              50,
-				SuggestedSeverity: "high",
-				Applied: []types.ScoreModifier{
-					{Name: "is-admin", Scorer: "aws", Kind: "delta", Value: 15, Priority: 50},
+			finding: &types.Finding{
+				ID:     "test-finding-1",
+				RuleID: "np.test.1",
+				Groups: [][]byte{[]byte("value")},
+				Score: &types.Score{
+					Final:             65,
+					Base:              50,
+					SuggestedSeverity: "high",
+					Applied: []types.ScoreModifier{
+						{Name: "is-admin", Scorer: "aws", Kind: "delta", Value: 15, Priority: 50},
+					},
 				},
 			},
 		},
@@ -206,7 +223,7 @@ func TestOutputAnalyzeHuman_ScoringTrail(t *testing.T) {
 	}
 
 	cmd, buf := newAnalyzeCmd()
-	err := outputAnalyzeHuman(cmd, findings, ruleMap)
+	err := outputAnalyzeHuman(cmd, results, ruleMap)
 	require.NoError(t, err)
 
 	output := buf.String()

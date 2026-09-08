@@ -103,7 +103,7 @@ func runAnalyze(cmd *cobra.Command, args []string) error {
 		Budget:       analyzeScoreBudget,
 	})
 
-	var findings []*types.Finding
+	var results []analyzedFinding
 	seen := map[string]bool{}
 	for _, match := range matches {
 		r, ok := ruleMap[match.RuleID]
@@ -122,19 +122,21 @@ func runAnalyze(cmd *cobra.Command, args []string) error {
 			Groups: match.Groups,
 		}
 		f.Score = engine.Score(ctx, f, []*types.Match{match}, r)
-		findings = append(findings, f)
+		results = append(results, analyzedFinding{finding: f, validation: match.ValidationResult})
 	}
 
-	if len(findings) == 0 {
+	if len(results) == 0 {
 		fmt.Fprintln(os.Stderr, "Matches found but no findings produced.")
 		return nil
 	}
 
 	switch analyzeFormat {
 	case "json":
-		return outputAnalyzeJSON(cmd, findings, ruleMap)
+		return outputAnalyzeJSON(cmd, results, ruleMap)
+	case "human":
+		return outputAnalyzeHuman(cmd, results, ruleMap)
 	default:
-		return outputAnalyzeHuman(cmd, findings, ruleMap)
+		return fmt.Errorf("unsupported --format %q (supported: human, json)", analyzeFormat)
 	}
 }
 
@@ -149,7 +151,10 @@ func readAnalyzeInput(cmd *cobra.Command) ([]byte, error) {
 		}
 		return data, nil
 	}
-	info, _ := os.Stdin.Stat()
+	info, err := os.Stdin.Stat()
+	if err != nil {
+		return nil, nil
+	}
 	if (info.Mode() & os.ModeCharDevice) == 0 {
 		data, err := io.ReadAll(io.LimitReader(os.Stdin, 1<<20))
 		if err != nil {
@@ -219,23 +224,30 @@ func containsIgnoreCaseAnalyze(s, substr string) bool {
 	return false
 }
 
+type analyzedFinding struct {
+	finding    *types.Finding
+	validation *types.ValidationResult
+}
+
 type analyzeOutput struct {
 	Findings []analyzeOutputFinding `json:"findings"`
 }
 
 type analyzeOutputFinding struct {
-	ID        string              `json:"id"`
-	RuleID    string              `json:"rule_id"`
-	RuleName  string              `json:"rule_name"`
-	Groups    []string            `json:"groups"`
-	Score     *types.Score        `json:"score,omitempty"`
-	Owner     *types.OwnerInfo    `json:"owner,omitempty"`
-	Resources []types.ResourceInfo `json:"resources,omitempty"`
+	ID         string                  `json:"id"`
+	RuleID     string                  `json:"rule_id"`
+	RuleName   string                  `json:"rule_name"`
+	Groups     []string                `json:"groups"`
+	Validation *types.ValidationResult `json:"validation,omitempty"`
+	Score      *types.Score            `json:"score,omitempty"`
+	Owner      *types.OwnerInfo        `json:"owner,omitempty"`
+	Resources  []types.ResourceInfo    `json:"resources,omitempty"`
 }
 
-func outputAnalyzeJSON(cmd *cobra.Command, findings []*types.Finding, ruleMap map[string]*types.Rule) error {
+func outputAnalyzeJSON(cmd *cobra.Command, results []analyzedFinding, ruleMap map[string]*types.Rule) error {
 	out := analyzeOutput{}
-	for _, f := range findings {
+	for _, af := range results {
+		f := af.finding
 		ruleName := f.RuleID
 		if r, ok := ruleMap[f.RuleID]; ok {
 			ruleName = r.Name
@@ -245,13 +257,14 @@ func outputAnalyzeJSON(cmd *cobra.Command, findings []*types.Finding, ruleMap ma
 			groups[i] = string(g)
 		}
 		out.Findings = append(out.Findings, analyzeOutputFinding{
-			ID:        f.ID,
-			RuleID:    f.RuleID,
-			RuleName:  ruleName,
-			Groups:    groups,
-			Score:     f.Score,
-			Owner:     f.Owner,
-			Resources: f.Resources,
+			ID:         f.ID,
+			RuleID:     f.RuleID,
+			RuleName:   ruleName,
+			Groups:     groups,
+			Validation: af.validation,
+			Score:      f.Score,
+			Owner:      f.Owner,
+			Resources:  f.Resources,
 		})
 	}
 	enc := json.NewEncoder(cmd.OutOrStdout())
@@ -259,7 +272,7 @@ func outputAnalyzeJSON(cmd *cobra.Command, findings []*types.Finding, ruleMap ma
 	return enc.Encode(out)
 }
 
-func outputAnalyzeHuman(cmd *cobra.Command, findings []*types.Finding, ruleMap map[string]*types.Rule) error {
+func outputAnalyzeHuman(cmd *cobra.Command, results []analyzedFinding, ruleMap map[string]*types.Rule) error {
 	out := cmd.OutOrStdout()
 
 	switch reportColor {
@@ -277,17 +290,38 @@ func outputAnalyzeHuman(cmd *cobra.Command, findings []*types.Finding, ruleMap m
 	s := newStyles(!color.NoColor)
 
 	_, _ = fmt.Fprintf(out, "\n%s\n\n",
-		s.findingHeading.Sprintf("Credential Analysis — %d finding(s)", len(findings)))
+		s.findingHeading.Sprintf("Credential Analysis — %d finding(s)", len(results)))
 
-	for i, f := range findings {
+	for i, af := range results {
+		f := af.finding
 		ruleName := f.RuleID
 		if r, ok := ruleMap[f.RuleID]; ok {
 			ruleName = r.Name
 		}
 
 		_, _ = fmt.Fprintf(out, "%s %s\n",
-			s.findingHeading.Sprintf("Finding %d/%d", i+1, len(findings)),
+			s.findingHeading.Sprintf("Finding %d/%d", i+1, len(results)),
 			s.ruleName.Sprint(ruleName))
+
+		if af.validation != nil {
+			valColor := s.metadata
+			switch af.validation.Status {
+			case "valid":
+				valColor = color.New(color.FgHiGreen, color.Bold)
+			case "invalid":
+				valColor = color.New(color.FgHiRed, color.Bold)
+			}
+			if color.NoColor {
+				valColor.DisableColor()
+			}
+			valStr := valColor.Sprint(af.validation.Status)
+			if af.validation.Message != "" {
+				valStr += " — " + s.metadata.Sprint(af.validation.Message)
+			}
+			_, _ = fmt.Fprintf(out, "  %s %s\n",
+				s.heading.Sprint("Validation:"),
+				valStr)
+		}
 
 		if f.Score != nil {
 			severityColor := s.heading
