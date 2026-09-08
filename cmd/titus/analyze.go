@@ -51,6 +51,12 @@ func init() {
 }
 
 func runAnalyze(cmd *cobra.Command, args []string) error {
+	switch analyzeFormat {
+	case "json", "human":
+	default:
+		return fmt.Errorf("unsupported --format %q (supported: human, json)", analyzeFormat)
+	}
+
 	input, err := readAnalyzeInput(cmd)
 	if err != nil {
 		return err
@@ -133,10 +139,8 @@ func runAnalyze(cmd *cobra.Command, args []string) error {
 	switch analyzeFormat {
 	case "json":
 		return outputAnalyzeJSON(cmd, results, ruleMap)
-	case "human":
-		return outputAnalyzeHuman(cmd, results, ruleMap)
 	default:
-		return fmt.Errorf("unsupported --format %q (supported: human, json)", analyzeFormat)
+		return outputAnalyzeHuman(cmd, results, ruleMap)
 	}
 }
 
