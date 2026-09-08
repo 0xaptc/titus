@@ -216,7 +216,7 @@ lint:
 # exists by name first.
 cli-docs:
 	@GOWORK=off go test ./cmd/titus -list 'TestCLISurface' | grep -qE '^TestCLISurface$$' \
-	  || { echo "cli-docs: no TestCLISurface in ./cmd/titus -- the -update writer was renamed. 'go test -run' exits 0 when its pattern matches nothing, so this target would report success having regenerated nothing at all; fix the name in cmd/titus/cli_surface_test.go."; exit 1; }
+	  || { echo "cli-docs: 'go test -list' did not report TestCLISurface in ./cmd/titus. Either the -update writer was renamed, or the package failed to build -- run 'go build ./cmd/titus' to tell which. 'go test -run' exits 0 when its pattern matches nothing, so without this check the target would report success having regenerated nothing at all."; exit 1; }
 	GOWORK=off go test ./cmd/titus -run 'TestCLISurface' -count=1 -update
 
 # Install titus binary to ~/.titus/ for Burp extension

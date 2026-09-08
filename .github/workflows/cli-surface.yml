@@ -10,8 +10,13 @@ name: CLI Surface Drift
 # docs/-only pull request runs no Go CI at all today. This gate has to fire on
 # every pull request to be worth anything.
 on:
+  # No `branches:` filter here, deliberately. `on.pull_request.branches` matches
+  # the pull request's BASE branch, so `branches: [main]` would skip this gate
+  # entirely on a stacked pull request (feature -> epic branch); the drift would
+  # then surface at the eventual epic -> main pull request, attributed to the
+  # wrong change. `push:` keeps its filter so that pushing a branch does not run
+  # this a second time alongside that branch's own pull request.
   pull_request:
-    branches: [main]
   push:
     branches: [main]
   workflow_dispatch:
@@ -88,16 +93,20 @@ jobs:
           done
 
       # Safety net: the gate above compares in memory and must never write. If it
-      # did, a stale golden could be silently "fixed" in CI and pass. The snapshot
-      # deliberately spans MORE than the three artifacts Docs.Write emits
-      # (docs/cli-surface.json, docs/CLI.md, README.md): it manifests every file
-      # under docs/ plus README.md -- 14 of them in this checkout at the time of
-      # writing, most unrelated to the CLI surface. Listing only the three cannot
-      # see the gate creating a fourth file, which is one of the ways a write
-      # escapes; walking the tree can. The cost is that any step which
-      # legitimately wrote under docs/ between the snapshot and this check would
-      # trip it -- there is no such step, and a new one should regenerate before
-      # the snapshot or move it.
+      # did, a stale golden could be silently "fixed" in CI and pass.
+      #
+      # The snapshot deliberately spans MORE than the three artifacts Docs.Write
+      # emits (docs/cli-surface.json, docs/CLI.md, README.md): it manifests every
+      # regular file under docs/ plus README.md. Listing only those three cannot
+      # see the gate creating a FOURTH file, which is the failure this exists to
+      # catch. docs/cli-surface-allow.txt is gate input, not an emitted artifact.
+      #
+      # It is a sha256 manifest rather than `git status` / `git diff` because
+      # both of those omit ignored paths, so a write to a gitignored file under
+      # docs/ is invisible to them. The manifest has no such blind spot -- which
+      # also means it trips if any step in this job legitimately writes under the
+      # watched paths. Nothing here does; the gate's own log goes to $RUNNER_TEMP
+      # for exactly that reason.
       - name: Verify the gate did not rewrite the goldens
         run: |
           set -eo pipefail
