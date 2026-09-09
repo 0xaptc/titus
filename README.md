@@ -77,6 +77,7 @@ Results are written to a datastore (`titus.ds` by default) and printed to the co
 Titus organizes its functionality into these focused subcommands:
 
 ```bash
+titus analyze # Analyze a credential on demand — detect type, validate, score, and enumerate resources
 titus enum    # Enumerate remote services for secrets
 titus explore # Interactively explore scan results
 titus report  # Generate a report from scan results

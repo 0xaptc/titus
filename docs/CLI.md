@@ -3,7 +3,7 @@
 # titus CLI reference
 
 Every command, alias and flag below is derived from the cobra command tree, not from prose.
-Schema version 1, surface hash `sha256:b7992c2ae91ea1b14614dba98eae3c1dd78bfacaf079031901aded0b89c0424c`.
+Schema version 1, surface hash `sha256:4d4da820671766fd35b8066eb3ac71db3ec866e2d13330488d29d7af05f8c5e5`.
 
 Regenerate with `make cli-docs` after adding, removing or renaming a command or a flag.
 
@@ -12,6 +12,7 @@ Regenerate with `make cli-docs` after adding, removing or renaming a command or 
 | Command | Aliases | Description |
 | --- | --- | --- |
 | [`titus`](#titus) | *(none)* | Titus - Go port of NoseyParker secrets scanner |
+| [`titus analyze`](#titus-analyze) | *(none)* | Analyze a credential on demand — detect type, validate, score, and enumerate resources |
 | [`titus confluence`](#titus-confluence) | *(none)* | (deprecated: use 'titus enum confluence' instead) |
 | [`titus enum`](#titus-enum) | *(none)* | Enumerate remote services for secrets |
 | [`titus enum confluence`](#titus-enum-confluence) | *(none)* | Scan a Confluence instance for secrets |
@@ -57,6 +58,32 @@ Titus - Go port of NoseyParker secrets scanner
 - Requires a subcommand
 
 ### Flags
+
+| Flag | Short | Type | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--quiet` | `-q` | bool | `false` | Quiet mode (errors only) |
+| `--verbose` | `-v` | bool | `false` | Verbose output |
+
+## `titus analyze`
+
+Analyze a credential on demand — detect type, validate, score, and enumerate resources
+
+- Usage: `titus analyze`
+- Aliases: *(none)*
+
+### Flags
+
+| Flag | Short | Type | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--file` |  | string |  | Path to file containing the credential |
+| `--format` |  | string | `human` | Output format: human, json |
+| `--score-budget` |  | duration | `1m0s` | Total scoring time budget |
+| `--score-timeout` |  | duration | `10s` | Timeout per scoring condition |
+| `--token` |  | string |  | Credential value to analyze |
+| `--type` |  | string |  | Credential type hint (e.g., aws, github, gitlab) — auto-detected if omitted |
+| `--validate-workers` |  | int | `4` | Number of concurrent validation workers |
+
+### Inherited flags
 
 | Flag | Short | Type | Default | Description |
 | --- | --- | --- | --- | --- |

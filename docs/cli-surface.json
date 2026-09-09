@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "surfaceHash": "sha256:b7992c2ae91ea1b14614dba98eae3c1dd78bfacaf079031901aded0b89c0424c",
+  "surfaceHash": "sha256:4d4da820671766fd35b8066eb3ac71db3ec866e2d13330488d29d7af05f8c5e5",
   "commands": [
     {
       "path": "titus",
@@ -21,6 +21,69 @@
           "type": "bool",
           "default": "false",
           "usage": "Verbose output"
+        }
+      ]
+    },
+    {
+      "path": "titus analyze",
+      "use": "analyze",
+      "short": "Analyze a credential on demand — detect type, validate, score, and enumerate resources",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "file",
+          "type": "string",
+          "usage": "Path to file containing the credential"
+        },
+        {
+          "name": "format",
+          "type": "string",
+          "default": "human",
+          "usage": "Output format: human, json"
+        },
+        {
+          "name": "quiet",
+          "shorthand": "q",
+          "type": "bool",
+          "default": "false",
+          "usage": "Quiet mode (errors only)",
+          "inherited": true
+        },
+        {
+          "name": "score-budget",
+          "type": "duration",
+          "default": "1m0s",
+          "usage": "Total scoring time budget"
+        },
+        {
+          "name": "score-timeout",
+          "type": "duration",
+          "default": "10s",
+          "usage": "Timeout per scoring condition"
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "usage": "Credential value to analyze"
+        },
+        {
+          "name": "type",
+          "type": "string",
+          "usage": "Credential type hint (e.g., aws, github, gitlab) — auto-detected if omitted"
+        },
+        {
+          "name": "validate-workers",
+          "type": "int",
+          "default": "4",
+          "usage": "Number of concurrent validation workers"
+        },
+        {
+          "name": "verbose",
+          "shorthand": "v",
+          "type": "bool",
+          "default": "false",
+          "usage": "Verbose output",
+          "inherited": true
         }
       ]
     },
