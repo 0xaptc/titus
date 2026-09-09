@@ -193,27 +193,9 @@ lint:
 	@which staticcheck > /dev/null || (echo "staticcheck not installed" && exit 0)
 	GOWORK=off CGO_ENABLED=$(CGO_ENABLED) staticcheck $(TAGS_FLAG) ./...
 
-# Regenerate the documented CLI surface from the live cobra tree.
-#
-# This is the single command to run after a deliberate rename: it rewrites
-# docs/cli-surface.json, docs/CLI.md and the generated regions of README.md from
-# whatever cobra actually registers. CI runs the same walk in check mode and fails when
-# the committed copies disagree.
-#
-# Deliberately tag-free: the walk only needs the cobra tree that cmd/titus
-# registers, so it must not depend on vectorscan being installed. Omitting
-# $(TAGS_FLAG) is the whole of that protection and is enough on its own --
-# every vectorscan-backed file is constrained
-# `//go:build !wasm && cgo && vectorscan`, a conjunction, so the tag alone
-# decides whether libhyperscan is linked. It is NOT a CGO-free recipe: unlike
-# every other Go recipe in this file it passes no CGO_ENABLED, and the
-# CGO_ENABLED variable above is never exported, so cgo stays at Go's default
-# (enabled wherever a C toolchain is present).
-#
-# `go test -run` exits 0 when its pattern matches nothing, so a rename away
-# from the TestCLISurface prefix would make this target print `ok`, regenerate
-# nothing, and leave the developer committing stale goldens. Assert the writer
-# exists by name first.
+# Regenerate CLI surface docs from the live cobra tree. Tag-free so it does
+# not require vectorscan. Asserts TestCLISurface exists first because
+# `go test -run` exits 0 when the pattern matches nothing.
 cli-docs:
 	@GOWORK=off go test ./cmd/titus -list 'TestCLISurface' | grep -qE '^TestCLISurface$$' \
 	  || { echo "cli-docs: 'go test -list' did not report TestCLISurface in ./cmd/titus. Either the -update writer was renamed, or the package failed to build -- run 'go build ./cmd/titus' to tell which. 'go test -run' exits 0 when its pattern matches nothing, so without this check the target would report success having regenerated nothing at all."; exit 1; }
