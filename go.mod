@@ -25,6 +25,7 @@ require (
 	github.com/google/go-github/v57 v57.0.0
 	github.com/jackc/pgx/v5 v5.7.2
 	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
+	github.com/praetorian-inc/capability-sdk v0.0.0-20260908174325-de5f920e8132
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
