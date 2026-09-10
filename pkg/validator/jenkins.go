@@ -2,7 +2,9 @@ package validator
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"strings"
@@ -21,6 +23,9 @@ func NewJenkinsValidator() *JenkinsValidator {
 		timeout: 5 * time.Second,
 		client: &http.Client{
 			Timeout: 5 * time.Second,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
 		},
 	}
 }
@@ -39,6 +44,10 @@ func (v *JenkinsValidator) Validate(ctx context.Context, match *types.Match) (*t
 
 	snippetCtx := v.snippetContext(match)
 
+	if isCrumbMatch(snippetCtx) {
+		return types.NewValidationResult(types.StatusUndetermined, 0, "cannot validate: matched value is a Jenkins crumb, not an API token"), nil
+	}
+
 	jenkinsURL := extractJenkinsURL(snippetCtx)
 	if jenkinsURL == "" {
 		return types.NewValidationResult(types.StatusUndetermined, 0, "cannot validate: no Jenkins URL found in context"), nil
@@ -54,7 +63,7 @@ func (v *JenkinsValidator) Validate(ctx context.Context, match *types.Match) (*t
 		return types.NewValidationResult(types.StatusUndetermined, 0, "cannot validate: no Jenkins username found in context"), nil
 	}
 
-	apiURL := strings.TrimRight(jenkinsURL, "/") + "/api/json"
+	apiURL := strings.TrimRight(jenkinsURL, "/") + "/whoAmI/api/json"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return types.NewValidationResult(types.StatusUndetermined, 0, fmt.Sprintf("failed to create request: %v", err)), nil
@@ -69,12 +78,37 @@ func (v *JenkinsValidator) Validate(ctx context.Context, match *types.Match) (*t
 
 	switch {
 	case resp.StatusCode == 200:
-		return types.NewValidationResult(types.StatusValid, 1.0, fmt.Sprintf("Jenkins credentials valid for %s@%s", user, jenkinsURL)), nil
+		return v.verifyWhoAmI(resp, user, jenkinsURL)
 	case resp.StatusCode == 401 || resp.StatusCode == 403:
 		return types.NewValidationResult(types.StatusInvalid, 1.0, "Jenkins credentials rejected"), nil
+	case resp.StatusCode >= 300 && resp.StatusCode < 400:
+		return types.NewValidationResult(types.StatusUndetermined, 0.5, "Jenkins responded with redirect — cannot confirm credentials"), nil
 	default:
 		return types.NewValidationResult(types.StatusUndetermined, 0.5, fmt.Sprintf("unexpected status %d from Jenkins", resp.StatusCode)), nil
 	}
+}
+
+type whoAmIResponse struct {
+	Authenticated bool   `json:"authenticated"`
+	Name          string `json:"name"`
+}
+
+func (v *JenkinsValidator) verifyWhoAmI(resp *http.Response, expectedUser, jenkinsURL string) (*types.ValidationResult, error) {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+	if err != nil {
+		return types.NewValidationResult(types.StatusUndetermined, 0.5, "failed to read whoAmI response"), nil
+	}
+
+	var who whoAmIResponse
+	if err := json.Unmarshal(body, &who); err != nil {
+		return types.NewValidationResult(types.StatusUndetermined, 0.5, "whoAmI response is not valid JSON"), nil
+	}
+
+	if !who.Authenticated || who.Name == "anonymous" {
+		return types.NewValidationResult(types.StatusUndetermined, 0.5, "Jenkins returned anonymous session — credentials may not have been applied"), nil
+	}
+
+	return types.NewValidationResult(types.StatusValid, 1.0, fmt.Sprintf("Jenkins credentials valid for %s@%s", who.Name, jenkinsURL)), nil
 }
 
 func (v *JenkinsValidator) extractToken(match *types.Match) string {
@@ -92,6 +126,12 @@ func (v *JenkinsValidator) snippetContext(match *types.Match) string {
 	return b.String()
 }
 
+var crumbPattern = regexp.MustCompile(`(?i)(?:jenkins[_-]?crumb|crumb[_-]?issuer)`)
+
+func isCrumbMatch(ctx string) bool {
+	return crumbPattern.MatchString(ctx)
+}
+
 var (
 	jenkinsURLPattern = regexp.MustCompile(
 		`(?i)(?:JENKINS_?(?:URL|HOST)?|jenkins_?(?:url|host)?)\s*[:=]\s*['"]?(https?://[^\s'"` + "`" + `]+)`,
@@ -101,11 +141,6 @@ var (
 	)
 	jenkinsUserPattern = regexp.MustCompile(
 		`(?i)(?:JENKINS_?USER(?:NAME)?|jenkins_?user(?:name)?)\s*[:=]\s*['"]?([^\s'"` + "`" + `,:]+)`,
-	)
-	jenkinsUserFallback = regexp.MustCompile(
-		`(?i)(?:jenkins_?(?:passwd|password|token))\s*[:=].*\n.*(?:jenkins_?user(?:name)?)\s*[:=]\s*['"]?([^\s'"` + "`" + `,:]+)` +
-			`|` +
-			`(?i)(?:jenkins_?user(?:name)?)\s*[:=]\s*['"]?([^\s'"` + "`" + `,:]+).*\n.*(?:jenkins_?(?:passwd|password|token))`,
 	)
 )
 

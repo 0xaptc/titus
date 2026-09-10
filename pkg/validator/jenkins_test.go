@@ -35,6 +35,41 @@ func TestJenkinsValidator_CanValidate(t *testing.T) {
 	}
 }
 
+func TestIsCrumbMatch(t *testing.T) {
+	tests := []struct {
+		name string
+		ctx  string
+		want bool
+	}{
+		{
+			name: "Jenkins-Crumb header",
+			ctx:  "curl -X POST 'http://jenkins.example.com/job/build' -H 'Jenkins-Crumb:440561953171ba44ace9740562d172bb'",
+			want: true,
+		},
+		{
+			name: "crumb_issuer reference",
+			ctx:  "crumb_issuer = '/crumbIssuer/api/xml'\ncrumb = '440561953171ba44ace9740562d172bb'",
+			want: true,
+		},
+		{
+			name: "API token context",
+			ctx:  "JENKINS_USER=admin\nJENKINS_TOKEN=11f4274ec59be12eace9a08b08ee13d54b",
+			want: false,
+		},
+		{
+			name: "admin password context",
+			ctx:  "Please use the following password to proceed to installation:\n\nbd9627decc6346d780b3b6ab6ea8fe1f",
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isCrumbMatch(tt.ctx))
+		})
+	}
+}
+
 func TestExtractJenkinsURL(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -119,9 +154,9 @@ func TestExtractJenkinsUser(t *testing.T) {
 
 func TestExtractHostFromURL(t *testing.T) {
 	tests := []struct {
-		name    string
-		url     string
-		want    string
+		name string
+		url  string
+		want string
 	}{
 		{"https with port", "https://jenkins.example.com:8443", "jenkins.example.com"},
 		{"http without port", "http://10.1.188.121", "10.1.188.121"},
@@ -133,6 +168,25 @@ func TestExtractHostFromURL(t *testing.T) {
 			assert.Equal(t, tt.want, extractHostFromURL(tt.url))
 		})
 	}
+}
+
+func TestJenkinsValidator_CrumbDetection(t *testing.T) {
+	v := NewJenkinsValidator()
+
+	match := &types.Match{
+		RuleID: "np.jenkins.1",
+		Groups: [][]byte{[]byte("440561953171ba44ace9740562d172bb")},
+		Snippet: types.Snippet{
+			Before:   []byte("curl -X POST 'http://jenkins.example.com/job/build' --user admin:pass -H '"),
+			Matching: []byte("Jenkins-Crumb:440561953171ba44ace9740562d172bb"),
+			After:    []byte("'"),
+		},
+	}
+
+	result, err := v.Validate(context.Background(), match)
+	require.NoError(t, err)
+	assert.Equal(t, types.StatusUndetermined, result.Status)
+	assert.Contains(t, result.Message, "crumb")
 }
 
 func TestJenkinsValidator_MissingToken(t *testing.T) {
