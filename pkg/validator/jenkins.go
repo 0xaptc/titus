@@ -44,7 +44,7 @@ func (v *JenkinsValidator) Validate(ctx context.Context, match *types.Match) (*t
 
 	snippetCtx := v.snippetContext(match)
 
-	if isCrumbMatch(snippetCtx) {
+	if isCrumbMatch(string(match.Snippet.Matching)) {
 		return types.NewValidationResult(types.StatusUndetermined, 0, "cannot validate: matched value is a Jenkins crumb, not an API token"), nil
 	}
 

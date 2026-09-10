@@ -189,6 +189,24 @@ func TestJenkinsValidator_CrumbDetection(t *testing.T) {
 	assert.Contains(t, result.Message, "crumb")
 }
 
+func TestJenkinsValidator_TokenAdjacentToCrumb(t *testing.T) {
+	v := NewJenkinsValidator()
+
+	match := &types.Match{
+		RuleID: "np.jenkins.1",
+		Groups: [][]byte{[]byte("11f4274ec59be12eace9a08b08ee13d54b")},
+		Snippet: types.Snippet{
+			Before:   []byte("JENKINS_CRUMB=440561953171ba44ace9740562d172bb\nJENKINS_URL=https://nonexistent.invalid\nJENKINS_USER=admin\n"),
+			Matching: []byte("jenkins_token=11f4274ec59be12eace9a08b08ee13d54b"),
+			After:    []byte(""),
+		},
+	}
+
+	result, err := v.Validate(context.Background(), match)
+	require.NoError(t, err)
+	assert.NotContains(t, result.Message, "crumb", "token match should not be classified as crumb just because JENKINS_CRUMB is in surrounding context")
+}
+
 func TestJenkinsValidator_MissingToken(t *testing.T) {
 	v := NewJenkinsValidator()
 
